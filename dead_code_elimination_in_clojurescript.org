@@ -15,32 +15,6 @@
 
 [1] https://github.com/andrewmcveigh/cljs-time/issues/21
 
-#+BEGIN_SRC clojure :tangle build.boot
-
-(set-env!
- :source-paths #{"src"}
- :dependencies '[[org.clojure/clojure "1.7.0"]
-                 [org.clojure/clojurescript "1.7.228"]])
-
-(require '[cljs.closure :as closure])
-
-(defn compile-dce-test []
-  (let [output (.getCanonicalPath (io/file "target/dce-test.js"))]
-    (closure/build "compile"
-                   {:cache-analysis false
-                    :main 'cljs-time.dce-compile-test
-                    :output-to output
-                    :optimizations :advanced
-                    ;; :pseudo-names true
-                    ;; :pretty-print true
-                    })))
-
-(boot/deftask test-dce []
-  (compile-dce-test)
-  (let [f (io/file "target/dce-test.js")
-        b (.length f)]
-    (println (format "%.2fK" (double (/ b 1024))))))
-#+END_SRC
 
 ** Procfile, for Heroku deployment
 If you want to use this, change the =:tangle no= below to 
@@ -57,11 +31,12 @@ https://developers.google.com/closure/compiler/docs/limitations?hl=en
 #+BEGIN_SRC clojure :tangle no
 {:cache-analysis false
  :main 'cljs-time.dce-compile-test
- :output-to output
+ :output-to "target/dce-test.js"
  :optimizations :advanced
  :pseudo-names true
  :pretty-print true
 }
+
 #+END_SRC
 
 ** Observations
@@ -236,3 +211,67 @@ boot.user=> (test-dce)
  * Get a base size for cljs
  * Decide which optimization to measure
  * Write the whole thing in code / literal style!
+
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/core.cljs
+(ns cljs-time.core
+  (:require
+   [clojure.string :as string])
+  (:import
+   [goog.date Date DateTime UtcDateTime Interval]))
+
+(def period-fns
+  {:millis (fn [date op value]
+             (let [ms (op (.getTime date) value)]
+               (doto date (.setTime ms))))
+   :weeks  (fn [date op value]
+             (let [days (op 0 (* value 7))]
+               (doto date
+                 (.add (Interval. Interval.DAYS days)))))})
+
+(def periods
+  {:seconds Interval.SECONDS
+   :minutes Interval.MINUTES
+   :hours   Interval.HOURS
+   :days    Interval.DAYS
+   :months  Interval.MONTHS
+   :years   Interval.YEARS})
+
+#+END_SRC
+
+
+* The Test
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/core.cljs
+
+(.log js/console (period-fns :weeks))
+
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle build.boot
+
+(set-env!
+ :source-paths #{"src"}
+ :dependencies '[[org.clojure/clojure "1.7.0"]
+                 [org.clojure/clojurescript "1.7.228"]])
+
+(require '[cljs.build.api :as cljs])
+(require '[cljs.closure :as closure])
+(require '[clojure.java.io :as io])
+
+(defn compile-size [namespace]
+  (let [uri (:uri (closure/cljs-source-for-namespace namespace))
+        outfile "target/dce-test"
+        js (cljs/build uri
+                       {:cache-analysis true
+                        :main namespace
+                        :output-to outfile
+                        :optimizations :advanced
+                        :pseudo-names true
+                        :pretty-print true})
+        length (.length (io/file outfile))]
+    (println (format "%.2fK" (double (/ length 1024))))))
+
+;; (compile-size 'cljs-time.core)
+
+#+END_SRC
