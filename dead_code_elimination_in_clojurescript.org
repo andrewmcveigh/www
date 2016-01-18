@@ -209,40 +209,9 @@ boot.user=> (test-dce)
  * Write the whole thing in code / literal style!
 
 
-#+BEGIN_SRC clojure :tangle src/cljs_time/core.cljs
-(ns cljs-time.core
-  (:require
-   [clojure.string :as string])
-  (:import
-   [goog.date Date DateTime UtcDateTime Interval]))
-
-(def period-fns
-  {:millis (fn [date op value]
-             (let [ms (op (.getTime date) value)]
-               (doto date (.setTime ms))))
-   :weeks  (fn [date op value]
-             (let [days (op 0 (* value 7))]
-               (doto date
-                 (.add (Interval. Interval.DAYS days)))))})
-
-(def periods
-  {:seconds Interval.SECONDS
-   :minutes Interval.MINUTES
-   :hours   Interval.HOURS
-   :days    Interval.DAYS
-   :months  Interval.MONTHS
-   :years   Interval.YEARS})
-
-#+END_SRC
 
 
 * The Test
-
-#+BEGIN_SRC clojure :tangle src/cljs_time/core.cljs
-
-(.log js/console (period-fns :weeks))
-
-#+END_SRC
 
 The test consists of a Clojure source file in the form of a `build.boot` script.
 
@@ -332,7 +301,7 @@ total 40
 #+END_SRC
 
 That's 18K, and that's exactly the size of optimized and gzipped
-ClojureScript[1]. We can also say then, that compiled optimized
+ClojureScript[2]. We can also say then, that compiled, optimized
 ClojureScript is 78K.
 
 There are two things to note so far: that there is 1.19K overhead
@@ -342,5 +311,104 @@ from the compiled artifact. Once you actually need it, you're getting
 all of ClojureScript.
 
 
-[1] http://stuartsierra.com/2012/06/16/why-im-using-clojurescript
+** cljs-time
 
+   Recently I re-wrote some of `cljs-time.core` to take advantage of
+   the date addition functionality in `goog.date`, replacing some
+   custom code containing a few subtle bugs.
+
+   Dynamically dispatching functions using a Clojure(Script) `map` is
+   a common pattern in clojure. Unfortunately, in ClojureScript this
+   can defeat DCE[1].
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/core_1.cljs
+(ns cljs-time.core-1
+  (:import
+   [goog.date Interval]))
+
+(def period-fns
+  {:millis (fn [date op value]
+             (let [ms (op (.getTime date) value)]
+               (doto date (.setTime ms))))
+   :weeks  (fn [date op value]
+             (let [days (op 0 (* value 7))]
+               (doto date
+                 (.add (Interval. Interval.DAYS days)))))})
+
+(def periods
+  {:seconds Interval.SECONDS
+   :minutes Interval.MINUTES
+   :hours   Interval.HOURS
+   :days    Interval.DAYS
+   :months  Interval.MONTHS
+   :years   Interval.YEARS})
+
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_2.cljs
+(ns cljs-time.base-2
+  (:require [cljs-time.core-1 :as time]))
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-2) ; => 1.19K
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_2.cljs
+(.log js/console (time/period-fns :weeks))
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-2) ; => 78.40K
+#+END_SRC
+
+Again, we see the same behaviour. The top-level maps have no cost
+until they are referenced. Once referenced they are compiled in, and
+also pull in ClojureScript. In this case it seems `period-fns`
+adds and extra 0.08K.
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/core_2.cljs
+(ns cljs-time.core-2
+  (:require
+   [clojure.string :as string])
+  (:import
+   [goog.date Interval]))
+
+(def period-fns
+  {:millis (fn [date op value]
+             (let [ms (op (.getTime date) value)]
+               (doto date (.setTime ms))))
+   :weeks  (fn [date op value]
+             (let [days (op 0 (* value 7))]
+               (doto date
+                 (.add (Interval. Interval.DAYS days)))))})
+
+(def periods
+  {:seconds Interval.SECONDS
+   :minutes Interval.MINUTES
+   :hours   Interval.HOURS
+   :days    Interval.DAYS
+   :months  Interval.MONTHS
+   :years   Interval.YEARS})
+
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_3.cljs
+(ns cljs-time.base-3
+  (:require [cljs-time.core-2 :as time]))
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-2) ; => 1.19K
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_3.cljs
+(.log js/console (time/period-fns :weeks))
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-2) ; => 79.11K
+#+END_SRC
+
+[1] https://github.com/andrewmcveigh/cljs-time/issues/21
+[2] http://stuartsierra.com/2012/06/16/why-im-using-clojurescript
