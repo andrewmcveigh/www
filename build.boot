@@ -8,17 +8,16 @@
 (require '[cljs.closure :as closure])
 (require '[clojure.java.io :as io])
 
+(def compiled-file "target/compiled.min.js")
+
+(def compiler-opts
+  {:cache-analysis true
+   :output-to compiled-file
+   :optimizations :advanced})
+
 (defn compile-size [namespace]
   (let [uri (:uri (closure/cljs-source-for-namespace namespace))
-        outfile "target/dce-test"
-        js (cljs/build uri
-                       {:cache-analysis true
-                        :main namespace
-                        :output-to outfile
-                        :optimizations :advanced
-                        :pseudo-names true
-                        :pretty-print true})
-        length (.length (io/file outfile))]
+        all-compiler-opts (assoc compiler-opts :main namespace)
+        js (cljs/build uri all-compiler-opts)
+        length (.length (io/file compiled-file))]
     (println (format "%.2fK" (double (/ length 1024))))))
-
-;; (compile-size 'cljs-time.core)

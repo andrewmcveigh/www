@@ -1,4 +1,4 @@
-#+TITLE: Observations of Dead Code Elimination in ClojureScript
+#+TITLE: Notes on Dead Code Elimination in ClojureScript
 #+AUTHOR: Andrew Mcveigh
 #+EMAIL: me@andrewmcveigh.com
 #+LANGUAGE: en
@@ -16,14 +16,6 @@
 [1] https://github.com/andrewmcveigh/cljs-time/issues/21
 
 
-** Procfile, for Heroku deployment
-If you want to use this, change the =:tangle no= below to 
-=:tangle mysite/Procfile=
-
-#+BEGIN_SRC text :tangle no
-web: lein with-profile production trampoline ring server
-#+END_SRC
-
 https://developers.google.com/closure/compiler/docs/limitations?hl=en
 
 ** Compiler Options
@@ -40,6 +32,10 @@ https://developers.google.com/closure/compiler/docs/limitations?hl=en
 #+END_SRC
 
 ** Observations
+
+** Baseline
+
+Using the following compiler options the
 
 80.27K minimized ~= 368.51K with `:pseudo-names` & `:pretty-print`
 
@@ -248,6 +244,8 @@ boot.user=> (test-dce)
 
 #+END_SRC
 
+The test consists of a Clojure source file in the form of a `build.boot` script.
+
 #+BEGIN_SRC clojure :tangle build.boot
 
 (set-env!
@@ -259,19 +257,90 @@ boot.user=> (test-dce)
 (require '[cljs.closure :as closure])
 (require '[clojure.java.io :as io])
 
-(defn compile-size [namespace]
-  (let [uri (:uri (closure/cljs-source-for-namespace namespace))
-        outfile "target/dce-test"
-        js (cljs/build uri
-                       {:cache-analysis true
-                        :main namespace
-                        :output-to outfile
-                        :optimizations :advanced
-                        :pseudo-names true
-                        :pretty-print true})
-        length (.length (io/file outfile))]
-    (println (format "%.2fK" (double (/ length 1024))))))
+#+END_SRC
 
-;; (compile-size 'cljs-time.core)
+Using the following compiler options:
+
+#+BEGIN_SRC clojure :tangle build.boot
+
+(def compiled-file "target/compiled.min.js")
+
+(def compiler-opts
+  {:cache-analysis true
+   :output-to compiled-file
+   :optimizations :advanced})
 
 #+END_SRC
+
+The function `compile-size` compiles the source and prints the size of
+the compiled source in KB to the console. The function is run from the REPL.
+
+#+BEGIN_SRC clojure :tangle build.boot
+
+(defn compile-size [namespace]
+  (let [uri (:uri (closure/cljs-source-for-namespace namespace))
+        all-compiler-opts (assoc compiler-opts :main namespace)
+        js (cljs/build uri all-compiler-opts)
+        length (.length (io/file compiled-file))]
+    (println (format "%.2fK" (double (/ length 1024))))))
+
+#+END_SRC
+
+We'll begin with a couple of baseline tests to determine the base size
+of compiled ClojureScript.
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_1.cljs
+(ns cljs-time.base-1)
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-1) ; => 1.19K
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_1.cljs
+(def something {})
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-1) ; => 1.19K
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_1.cljs
+(.log js/console something)
+#+END_SRC
+
+#+BEGIN_SRC clojure :tangle no
+boot.user=> (compile-size 'cljs-time.base-1) ; => 78.32K
+#+END_SRC
+
+OK, what's that?
+
+#+BEGIN_SRC bash :tangle no
+$ ls -lh target/
+total 160
+-rw-r--r--  1 andrew.mcveigh  staff    78K 18 Jan 20:47 compiled.min.js
+#+END_SRC
+
+What size would that be gzipped?
+
+#+BEGIN_SRC bash :tangle no
+$ gzip target/compiled.min.js
+
+$ ls -lh target/
+total 40
+-rw-r--r--   1 andrew.mcveigh  staff    18K 18 Jan 20:42 compiled.min.js.gz
+#+END_SRC
+
+That's 18K, and that's exactly the size of optimized and gzipped
+ClojureScript[1]. We can also say then, that compiled optimized
+ClojureScript is 78K.
+
+There are two things to note so far: that there is 1.19K overhead
+before ClojureScript is compiled in, and that top-level datastructures
+don't cost anything until they are referenced. The DCE removes the
+from the compiled artifact. Once you actually need it, you're getting
+all of ClojureScript.
+
+
+[1] http://stuartsierra.com/2012/06/16/why-im-using-clojurescript
+
