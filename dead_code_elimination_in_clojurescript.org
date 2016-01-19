@@ -314,8 +314,15 @@ all of ClojureScript.
 ** cljs-time
 
    Recently I re-wrote some of `cljs-time.core` to take advantage of
-   the date addition functionality in `goog.date`, replacing some
-   custom code containing a few subtle bugs.
+   the date addition functionality in `goog.date`, and to hopefully
+   help some colleagues who were seeing issues with DCE. Re-writing
+   also had the handy side-effect of replacing some custom code
+   containing a probably a few subtle bugs, such as a bug calling
+   `minus` with exactly `(months 21)`.
+
+#+BEGIN_SRC clojure :tangle src/cljs_time/base_2.cljs
+(cljs-time.core/minus x (cljs-time.core/months 21))
+#+END_SRC
 
    Dynamically dispatching functions using a Clojure(Script) `map` is
    a common pattern in clojure. Unfortunately, in ClojureScript this
@@ -412,3 +419,4 @@ boot.user=> (compile-size 'cljs-time.base-2) ; => 79.11K
 
 [1] https://github.com/andrewmcveigh/cljs-time/issues/21
 [2] http://stuartsierra.com/2012/06/16/why-im-using-clojurescript
+[3] https://github.com/andrewmcveigh/cljs-time/issues/55
