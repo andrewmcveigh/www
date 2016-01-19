@@ -1,7 +1,8 @@
 
 (ns cljs-time.core-2
   (:require
-   [clojure.string :as string])
+   [cljs-time.internal.parse]
+   [cljs-time.internal.unparse])
   (:import
    [goog.date Interval]))
 
